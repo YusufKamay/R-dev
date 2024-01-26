@@ -1,0 +1,265 @@
+---
+title: "yusuf"
+format: html
+editor: visual
+---
+
+1.  VERİ SETİNİ YÜKLEME
+
+```{r}
+library(readxl)
+ist <- read_excel("D:/ist.xlsx")
+View(ist)
+```
+
+2.  GEREKLİ PAKETLERİN YÜKLENMESİ
+
+```{r}
+library(tidyverse)
+library(magrittr)
+library(funModeling)
+library(DataExplorer)
+library(maps)
+library(plotly)
+library(DT)
+library(tidytext)
+library(gridExtra)
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(plotly)
+library(tidyr)
+library(tokenizers)
+library(wordcloud)
+library(naniar)
+library(readr)
+library(zoo)
+
+```
+
+3.  VERİ ANALİZİ
+
+Veri setini hızlıca bir gözden geçirelim:
+
+```{r}
+summary(ist)
+```
+
+```{r}
+dim(ist)
+```
+
+Veri setindeki her satır bir ay değerini göstermektedir ve 12 satırdan oluşmaktadır.
+
+14 yılın verileri incelendiğinden 14 + 1 (ilk sütun string aylar) 15 sütuna sahiptir.
+
+```{r}
+head(ist,7)
+```
+
+```{r}
+tail(ist,7)
+```
+
+plot_intro() fonksiyonu ile veri seti hakkında bir giriş grafiği oluşturalım;
+
+```{r}
+plot_intro(ist)
+```
+
+Eksik veri incelemesi;
+
+```{r}
+
+# Her sütunda eksik değer sayısı
+ist %>% summarise_all(~sum(is.na(.)))
+
+
+```
+
+```{r}
+# Eksik değerlerin görselleştirilmesi
+gg_miss_var(ist)
+
+```
+
+Yukarıdaki tabloda görüldüğü üzere eksik veri bulunmamaktadır.
+
+Grafikte görülen mavi noktalar eksik veri olmadığını gösteren "0" değerlerini temsil etmektedir.
+
+Uygulama amaçlı eksik veri oluşturalım:
+
+```{r}
+set.seed(123) # Rastgeleliği sabitlemek için
+
+# ist veri setinin boyutunu al
+n <- nrow(ist)
+p <- ncol(ist)
+
+# Rastgele eksik veri oluşturmak için hücrelerin %5'ini seç
+missing_count <- round(0.05 * n * p)
+
+# Eksik veriler için rastgele satır ve sütun indeksleri oluştur
+missing_rows <- sample(1:n, missing_count, replace = TRUE)
+missing_cols <- sample(1:p, missing_count, replace = TRUE)
+
+# Oluşturulan indekslere göre veri setindeki hücrelere NA atayın
+for(i in seq_along(missing_rows)) {
+  ist[missing_rows[i], missing_cols[i]] <- NA
+}
+
+
+```
+
+Eksik verileri görselleştirelim;
+
+```{r}
+gg_miss_upset(ist)
+```
+
+Veri setinin bir zaman serisi veri seti olması nedeiyle eksik hücreleri doldurmada öncesi/sonrası değerleri kullanılarak doldurulmuştur. 'zoo' paketinin 'na.locf()' fonksiyonu, LOCF yani son gözlemin ileri taşınması yöntemiyle verileri doldurmak için;
+
+```{r}
+# LOCF yöntemiyle eksik verileri doldurma
+ist_filled <- ist
+numeric_columns <- sapply(ist_filled, is.numeric) # Sayısal sütunları belirle
+
+# Sayısal sütunlarda LOCF uygulama
+ist_filled[, numeric_columns] <- lapply(ist_filled[, numeric_columns], function(x) {
+  na.locf(x, na.rm = FALSE)
+})
+
+
+```
+
+Doldurulan eksik verilerin kontrol edilmesi;
+
+```{r}
+print(ist_filled)
+```
+
+4.  VERİ GÖRSELEŞTİRME
+
+Veri setindeki bir sütun yılları temsil etmekte olup, satırlar ayları temsil etmektedir.
+
+Görselleştirmelerin yapılabilmesi için her bir yıl-ay çifti için tek bir satır oluşturacak şekilde uzun formata dönüştürelim;
+
+```{r}
+# Veri setini 'uzun' formata dönüştürme işlemi
+ist_long <- pivot_longer(
+  ist_filled,
+  cols = -Ay, # 'Ay' sütunu dışındaki tüm sütunları dönüştür
+  names_to = "Yıl",
+  values_to = "Değer"
+)
+
+
+```
+
+Daha sonra zamanla değişen değerleri göstermek için zaman serisi grafiği çizdirelim;
+
+4.1 Zaman Serisi Grafiği
+
+```{r}
+ggplot(ist_long, aes(x = Yıl, y = Değer, group = Ay, color = Ay)) +
+  geom_line() +
+  theme_minimal() +
+  labs(title = "Ay bazında Zaman Serisi", x = "Yıl", y = "Değer")
+```
+
+Yukarıdaki zaman serisi grafiğinde, aylara göre yıllık bazda bir değerin nasıl değiştiği görülmektedir.
+
+Grafiğe göre değerlerin çoğu zaman içinde birbirine paralel bir artış ya da azalış göstermektedir.
+
+Ancak 2020 yılına gelindiğinde 2022 yılına kadar değerlerde ani bir şekilde değişim görülmektedir.
+
+Bu değişimin kaynağı veri seti incelendiğinde açıkça görülmektedir ki veri toplama yönteminde bir değişikliğe gidilmiş olup değerler öncek yıllara göre değerlerde sayısal artış gözlenmektedir.
+
+4.2 Isı haritası;
+
+Isı haritasında zaman serisinde tanımlanan ve kullanılan veri çerçervesi üzerinden devam edilmektedir.
+
+```{r}
+
+ggplot(ist_long, aes(x = Yıl, y = Ay, fill = Değer)) +
+  geom_tile() +
+  scale_fill_viridis_c() + # Renk paleti için viridis kullanabilirsiniz
+  theme_minimal() +
+  labs(title = "Ay ve Yıl Bazında Isı Haritası", x = "Yıl", y = "Ay")
+
+
+```
+
+Isı haritasında, her sütun bir yılı ve her satır bir ayı temsil etmektedir.
+
+Renkler, o ayda o yıl için kaydedilen değerlerin büyüklüğünü gösterir.
+
+Koyu renkler (mor) daha düşük değerleri gösterirken, açık (yeşil) renkler ise daha yüksek değerleri işaret etmektedir.
+
+Yukarıda incelenen mevsimsellik grafiğinde de incelemiş olduğumuzdan aynı yorumların geçerli olduğu söylenebilir.
+
+4.3 Kutu Grafiği;
+
+```{r}
+
+# 'ist_long' veri çerçevesi kullanılarak kutu grafiği çizimi
+ggplot(ist_long, aes(x = Yıl, y = Değer, fill = Ay)) + 
+  geom_boxplot() +
+  theme_minimal() +
+  labs(title = "Yıl Bazında Kutu Grafiği", x = "Yıl", y = "Değer")
+
+
+```
+
+4.4 Pasta Grafiği
+
+Veri setindeki her satır bir ay değerini göstermektedir ve 12 satırdan oluşmaktadır.
+
+15 sütun vardır. İlk sütun ayları içermekte olup, stringtir. 14 yılın verisi diğer sütunları oluşturmakta olup numerictir.
+
+Satır toplamları alınarak aylara göre mevsimsellik durumu olup olmadığını incelemenin bir yolu da pasta grafiğidir.
+
+Öncelikle aylık bazda değerleri incelemek için satır bazlı toplamları alalım;
+
+```{r}
+
+# Her ay için yıllık toplamları hesapla
+monthly_totals <- ist_filled %>%
+  gather(Yıl, Değer, -Ay) %>%
+  group_by(Ay) %>%
+  summarise(Total = sum(Değer, na.rm = TRUE))
+
+# Pasta grafiği için verileri hazırla
+monthly_totals$label <- paste(monthly_totals$Ay, "(", monthly_totals$Total, ")", sep="")
+
+
+```
+
+Aldığımız satır toplamlarını görselleştirelim;
+
+```{r}
+# Pasta grafiği çiz
+pie(monthly_totals$Total, labels = monthly_totals$label, main = "Aylık Toplam Değerlerin Pasta Grafiği")
+
+```
+
+Grafikteki en yüksekdeğere sahip olan ay ile en düşük değere sahip olan ayın yüzde olarak farkını hesaplayalım;
+
+```{r}
+# En yüksek ve en düşük değerleri içeren ayları bul
+max_value <- max(monthly_totals$Total)
+min_value <- min(monthly_totals$Total)
+
+# Bu değerlere sahip ayları bul
+max_month <- monthly_totals$Ay[which.max(monthly_totals$Total)]
+min_month <- monthly_totals$Ay[which.min(monthly_totals$Total)]
+
+# Yüzde olarak farkı hesapla
+percent_difference <- ((max_value - min_value) / max_value) * 100
+
+# Sonuçları yazdır
+cat("En yüksek değere sahip ay:", max_month, "ile", max_value, "değeri.\n")
+cat("En düşük değere sahip ay:", min_month, "ile", min_value, "değeri.\n")
+cat("Bu iki ay arasındaki yüzde fark:", percent_difference, "%\n")
+
+```
